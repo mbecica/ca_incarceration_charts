@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>California CDCR Budget, 1980–2025</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #fff;
+      color: #1a1a1a;
+      margin: 0;
+      padding: 2.5rem 3rem;
+      max-width: 960px;
+    }
+
+    h1 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin: 0 0 0.2rem 0;
+      letter-spacing: -0.01em;
+    }
+
+    .subtitle {
+      font-size: 0.82rem;
+      color: #666;
+      margin: 0 0 1.75rem 0;
+    }
+
+    .axis text { font-size: 0.72rem; fill: #555; }
+    .axis .domain { display: none; }
+    .axis line { stroke: #ccc; }
+
+    .grid line { stroke: #ebebeb; }
+    .grid .domain { display: none; }
+
+    .annotation {
+      font-size: 0.68rem;
+      fill: #888;
+    }
+
+    .source-note {
+      font-size: 0.7rem;
+      color: #888;
+      margin-top: 0.6rem;
+      line-height: 1.5;
+    }
+
+    .tooltip {
+      position: fixed;
+      background: #1a1a1a;
+      color: #fff;
+      padding: 0.45rem 0.65rem;
+      border-radius: 3px;
+      font-size: 0.72rem;
+      line-height: 1.6;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.1s;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>California CDCR Budget, FY 1980–81 to 2025–26</h1>
+  <p class="subtitle">Total spending and program breakdown, all funds, nominal dollars</p>
+  <div id="chart"></div>
+  <p class="source-note">
+    Sources: California Budget &amp; Policy Center; LAO Budget Analyses; BJS State Corrections Expenditures; Governor's Budget chapter 5210 (ebudget.ca.gov).<br>
+    Program-level breakdown available from FY 2011–12. "Other" = total budget minus adult operations, parole, and rehabilitative programs.
+  </p>
+
+  <div class="tooltip" id="tooltip"></div>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+    const margin = { top: 20, right: 148, bottom: 44, left: 68 };
+    const totalWidth = 880;
+    const totalHeight = 460;
+    const width  = totalWidth  - margin.left - margin.right;
+    const height = totalHeight - margin.top  - margin.bottom;
+
+    const svg = d3.select("#chart")
+      .append("svg")
+        .attr("width",  totalWidth)
+        .attr("height", totalHeight)
+        .attr("role", "img")
+        .attr("aria-label",
+          "Line chart of California CDCR total budget from 1980 to 2025, " +
+          "with program breakdown from 2011")
+      .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const tooltip = d3.select("#tooltip");
+
+    // Use start year of fiscal year for x position
+    const parseYear = fy => +fy.split("-")[0];
+
+    const series = [
+      { key: "adult",   label: "Adult operations", stroke: "#1a1a1a", width: 2.2, dash: null    },
+      { key: "parole",  label: "Parole",            stroke: "#555",    width: 1.8, dash: "7 4"   },
+      { key: "other",   label: "Other",             stroke: "#888",    width: 1.8, dash: "2.5 4" },
+      { key: "rehab",   label: "Rehabilitation",    stroke: "#bbb",    width: 1.6, dash: "1 4"   },
+    ];
+
+    d3.csv("data/ca_statewide_corrections_budget.csv").then(raw => {
+      const data = raw.map(d => {
+        const total = d.corrections_budget_nominal_dollars  ? +d.corrections_budget_nominal_dollars  : null;
+        const adult = d.adult_operations_expenditures       ? +d.adult_operations_expenditures       : null;
+        const par   = d.total_parole_expenditures           ? +d.total_parole_expenditures           : null;
+        const rehab = d.rehabilitative_programs_expenditures ? +d.rehabilitative_programs_expenditures : null;
+        const other = (total && adult && par && rehab)
+          ? total - adult - par - rehab
+          : null;
+        return {
+          fy:    d.fiscal_year,
+          year:  parseYear(d.fiscal_year),
+          total, adult, parole: par, rehab, other,
+        };
+      });
+
+      const x = d3.scaleLinear()
+        .domain([1980, 2026])
+        .range([0, width]);
+
+      const allVals = data.flatMap(d =>
+        [d.total, d.adult, d.parole, d.rehab, d.other].filter(v => v !== null)
+      );
+      const y = d3.scaleLinear()
+        .domain([0, d3.max(allVals) * 1.06])
+        .range([height, 0])
+        .nice();
+
+      // Grid
+      svg.append("g")
+        .attr("class", "grid")
+        .call(d3.axisLeft(y).ticks(6).tickSize(-width).tickFormat(""));
+
+      // Axes
+      svg.append("g")
+        .attr("class", "axis")
+        .attr("transform", `translate(0,${height})`)
+        .call(d3.axisBottom(x).ticks(10).tickFormat(d => `'${String(d).slice(2)}`));
+
+      svg.append("g")
+        .attr("class", "axis")
+        .call(d3.axisLeft(y).ticks(6)
+          .tickFormat(d => d === 0 ? "0" : `$${d3.format(".1f")(d / 1e9)}B`));
+
+      // Y-axis label
+      svg.append("text")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -(height / 2))
+        .attr("y", -56)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "0.72rem")
+        .attr("fill", "#555")
+        .text("Nominal dollars");
+
+      // Total line (thin reference, full span)
+      const totalLine = d3.line()
+        .defined(d => d.total !== null)
+        .x(d => x(d.year))
+        .y(d => y(d.total))
+        .curve(d3.curveMonotoneX);
+
+      svg.append("path")
+        .datum(data)
+        .attr("fill", "none")
+        .attr("stroke", "#ccc")
+        .attr("stroke-width", 1.2)
+        .attr("stroke-dasharray", null)
+        .attr("d", totalLine);
+
+      // Total label
+      const lastTotal = [...data].reverse().find(d => d.total !== null);
+      if (lastTotal) {
+        svg.append("text")
+          .attr("x", x(lastTotal.year) + 7)
+          .attr("y", y(lastTotal.total))
+          .attr("dominant-baseline", "middle")
+          .attr("font-size", "0.72rem")
+          .attr("fill", "#aaa")
+          .text("Total");
+      }
+
+      // Annotation for breakdown start
+      const breakYear = 2011;
+      svg.append("line")
+        .attr("x1", x(breakYear)).attr("x2", x(breakYear))
+        .attr("y1", 0).attr("y2", height)
+        .attr("stroke", "#ddd")
+        .attr("stroke-width", 1)
+        .attr("stroke-dasharray", "4 3");
+
+      svg.append("text")
+        .attr("class", "annotation")
+        .attr("x", x(breakYear) + 5)
+        .attr("y", 12)
+        .text("Program detail");
+      svg.append("text")
+        .attr("class", "annotation")
+        .attr("x", x(breakYear) + 5)
+        .attr("y", 24)
+        .text("from 2011–12");
+
+      // Component lines
+      series.forEach(s => {
+        const lineGen = d3.line()
+          .defined(d => d[s.key] !== null)
+          .x(d => x(d.year))
+          .y(d => y(d[s.key]))
+          .curve(d3.curveMonotoneX);
+
+        svg.append("path")
+          .datum(data)
+          .attr("fill", "none")
+          .attr("stroke", s.stroke)
+          .attr("stroke-width", s.width)
+          .attr("stroke-dasharray", s.dash)
+          .attr("stroke-linecap", "round")
+          .attr("d", lineGen);
+
+        const last = [...data].reverse().find(d => d[s.key] !== null);
+        if (last) {
+          svg.append("text")
+            .attr("x", x(last.year) + 7)
+            .attr("y", y(last[s.key]))
+            .attr("dominant-baseline", "middle")
+            .attr("font-size", "0.72rem")
+            .attr("fill", s.stroke)
+            .text(s.label);
+        }
+      });
+
+      // Hover
+      const bisect = d3.bisector(d => d.year).center;
+      const fmt = v => v !== null ? `$${d3.format(".2f")(v / 1e9)}B` : "—";
+
+      svg.append("rect")
+        .attr("width", width).attr("height", height)
+        .attr("fill", "none").attr("pointer-events", "all")
+        .on("mousemove", function(event) {
+          const [mx] = d3.pointer(event);
+          const year = Math.round(x.invert(mx));
+          const i = bisect(data, year);
+          const d = data[i];
+          if (!d) return;
+
+          let html = `<strong>${d.fy}</strong>`;
+          html += `<br>Total: ${fmt(d.total)}`;
+          if (d.adult  !== null) html += `<br>Adult ops: ${fmt(d.adult)}`;
+          if (d.parole !== null) html += `<br>Parole: ${fmt(d.parole)}`;
+          if (d.rehab  !== null) html += `<br>Rehab: ${fmt(d.rehab)}`;
+          if (d.other  !== null) html += `<br>Other: ${fmt(d.other)}`;
+
+          tooltip
+            .style("opacity", 1)
+            .style("left", (event.clientX + 14) + "px")
+            .style("top",  (event.clientY - 36) + "px")
+            .html(html);
+        })
+        .on("mouseleave", () => tooltip.style("opacity", 0));
+    });
+  </script>
+</body>
+</html>

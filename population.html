@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>California Incarceration Population, 1920–2025</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #fff;
+      color: #1a1a1a;
+      margin: 0;
+      padding: 2.5rem 3rem;
+      max-width: 960px;
+    }
+
+    h1 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin: 0 0 0.2rem 0;
+      letter-spacing: -0.01em;
+    }
+
+    .subtitle {
+      font-size: 0.82rem;
+      color: #666;
+      margin: 0 0 1.75rem 0;
+    }
+
+    .axis text {
+      font-size: 0.72rem;
+      fill: #555;
+    }
+
+    .axis .domain { display: none; }
+    .axis line { stroke: #ccc; }
+
+    .grid line {
+      stroke: #ebebeb;
+    }
+    .grid .domain { display: none; }
+
+    .source-note {
+      font-size: 0.7rem;
+      color: #888;
+      margin-top: 0.6rem;
+      line-height: 1.5;
+    }
+
+    .tooltip {
+      position: fixed;
+      background: #1a1a1a;
+      color: #fff;
+      padding: 0.45rem 0.65rem;
+      border-radius: 3px;
+      font-size: 0.72rem;
+      line-height: 1.6;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.1s;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>California Incarceration Population, 1920–2025</h1>
+  <p class="subtitle">State prison, parole, and probation populations</p>
+  <div id="chart"></div>
+  <p class="source-note">
+    Sources: CDCR historical records (Zimring &amp; Hawkins compilation); BJS Annual Parole Survey; CA DOJ OpenJustice.<br>
+    Parole data available from 2000; probation from 2003.
+  </p>
+
+  <div class="tooltip" id="tooltip"></div>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+    const margin = { top: 16, right: 110, bottom: 44, left: 68 };
+    const totalWidth = 860;
+    const totalHeight = 460;
+    const width  = totalWidth  - margin.left - margin.right;
+    const height = totalHeight - margin.top  - margin.bottom;
+
+    const svg = d3.select("#chart")
+      .append("svg")
+        .attr("width",  totalWidth)
+        .attr("height", totalHeight)
+        .attr("role", "img")
+        .attr("aria-label",
+          "Line chart of California incarceration population 1920 to 2025, " +
+          "showing state prison, parole, and probation populations")
+      .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const tooltip = d3.select("#tooltip");
+
+    const series = [
+      { key: "prison",    label: "State prison",  stroke: "#1a1a1a", width: 2.2, dash: null      },
+      { key: "probation", label: "Probation",      stroke: "#555",    width: 1.8, dash: "7 4"     },
+      { key: "parole",    label: "Parole",          stroke: "#999",    width: 1.8, dash: "2.5 4"   },
+    ];
+
+    d3.csv("data/ca_statewide_prison_population.csv").then(raw => {
+      const data = raw.map(d => ({
+        year:      +d.year,
+        prison:    d.prison_population  ? +d.prison_population  : null,
+        parole:    d.parole_population  ? +d.parole_population  : null,
+        probation: d.total_probation    ? +d.total_probation    : null,
+      }));
+
+      const x = d3.scaleLinear()
+        .domain([1920, 2025])
+        .range([0, width]);
+
+      const allVals = data.flatMap(d =>
+        [d.prison, d.parole, d.probation].filter(v => v !== null)
+      );
+      const y = d3.scaleLinear()
+        .domain([0, d3.max(allVals) * 1.06])
+        .range([height, 0])
+        .nice();
+
+      // Grid
+      svg.append("g")
+        .attr("class", "grid")
+        .call(
+          d3.axisLeft(y)
+            .ticks(6)
+            .tickSize(-width)
+            .tickFormat("")
+        );
+
+      // Axes
+      svg.append("g")
+        .attr("class", "axis")
+        .attr("transform", `translate(0,${height})`)
+        .call(
+          d3.axisBottom(x)
+            .ticks(11)
+            .tickFormat(d3.format("d"))
+        );
+
+      svg.append("g")
+        .attr("class", "axis")
+        .call(
+          d3.axisLeft(y)
+            .ticks(6)
+            .tickFormat(d => d === 0 ? "0" : `${d / 1000}k`)
+        );
+
+      // Y-axis label
+      svg.append("text")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -(height / 2))
+        .attr("y", -52)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "0.72rem")
+        .attr("fill", "#555")
+        .text("People");
+
+      // Lines and end labels
+      series.forEach(s => {
+        const lineGen = d3.line()
+          .defined(d => d[s.key] !== null)
+          .x(d => x(d.year))
+          .y(d => y(d[s.key]))
+          .curve(d3.curveMonotoneX);
+
+        svg.append("path")
+          .datum(data)
+          .attr("fill", "none")
+          .attr("stroke", s.stroke)
+          .attr("stroke-width", s.width)
+          .attr("stroke-dasharray", s.dash)
+          .attr("stroke-linecap", "round")
+          .attr("d", lineGen);
+
+        const last = [...data].reverse().find(d => d[s.key] !== null);
+        if (last) {
+          svg.append("text")
+            .attr("x", x(last.year) + 7)
+            .attr("y", y(last[s.key]))
+            .attr("dominant-baseline", "middle")
+            .attr("font-size", "0.72rem")
+            .attr("fill", s.stroke)
+            .text(s.label);
+        }
+      });
+
+      // Hover
+      const bisect = d3.bisector(d => d.year).center;
+      const fmt = d3.format(",");
+
+      svg.append("rect")
+        .attr("width", width)
+        .attr("height", height)
+        .attr("fill", "none")
+        .attr("pointer-events", "all")
+        .on("mousemove", function(event) {
+          const [mx] = d3.pointer(event);
+          const year = Math.round(x.invert(mx));
+          const i = bisect(data, year);
+          const d = data[i];
+          if (!d) return;
+
+          let html = `<strong>${d.year}</strong>`;
+          if (d.prison    !== null) html += `<br>Prison: ${fmt(d.prison)}`;
+          if (d.parole    !== null) html += `<br>Parole: ${fmt(d.parole)}`;
+          if (d.probation !== null) html += `<br>Probation: ${fmt(d.probation)}`;
+
+          tooltip
+            .style("opacity", 1)
+            .style("left",  (event.clientX + 14) + "px")
+            .style("top",   (event.clientY - 36) + "px")
+            .html(html);
+        })
+        .on("mouseleave", () => tooltip.style("opacity", 0));
+    });
+  </script>
+</body>
+</html>
