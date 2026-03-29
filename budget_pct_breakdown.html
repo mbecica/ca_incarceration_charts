@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>California CDCR Budget, 1980–2025 (2024 dollars)</title>
+  <title>CDCR as % of California General Fund, 1980–2025 (program breakdown)</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
 
@@ -62,20 +62,20 @@
 </head>
 <body>
 
-  <h1>California CDCR Budget, FY 1980–81 to 2024–25</h1>
-  <p class="subtitle">Total spending and program breakdown, all funds, 2024 dollars</p>
+  <h1>CDCR Spending as a Share of California's General Fund, FY 1980–81 to 2024–25</h1>
+  <p class="subtitle">CDCR total and program-level spending as percent of General Fund expenditures</p>
   <div id="chart"></div>
   <p class="source-note">
-    Sources: California Budget &amp; Policy Center; LAO Budget Analyses; BJS State Corrections Expenditures; Governor's Budget chapter 5210 (ebudget.ca.gov).<br>
-    Adjusted to 2024 dollars using BLS CPI-U annual averages (fiscal year average). 2025–26 CPI estimated.
-    Program-level breakdown available from FY 2011–12. "Other" = total budget minus adult operations, parole, and rehabilitative programs.
+    Sources: California Budget &amp; Policy Center; LAO Budget Analyses; DOF Chart A; Governor's Budget chapter 5210 (ebudget.ca.gov).<br>
+    Percentage calculated as program expenditures / total General Fund expenditures × 100.
+    Program-level breakdown available from FY 2011–12. "Other" = total CDCR minus adult operations, parole, and rehabilitative programs.
   </p>
 
   <div class="tooltip" id="tooltip"></div>
 
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script>
-    const margin = { top: 20, right: 148, bottom: 44, left: 68 };
+    const margin = { top: 20, right: 148, bottom: 44, left: 56 };
     const totalWidth = 880;
     const totalHeight = 460;
     const width  = totalWidth  - margin.left - margin.right;
@@ -87,7 +87,7 @@
         .attr("height", totalHeight)
         .attr("role", "img")
         .attr("aria-label",
-          "Stacked area chart of California CDCR total budget from 1980 to 2025 in 2024 dollars, " +
+          "Stacked area chart of CDCR spending as a percent of California General Fund from 1980 to 2025, " +
           "with program breakdown from 2011")
       .append("g")
         .attr("transform", `translate(${margin.left},${margin.top})`);
@@ -96,32 +96,47 @@
 
     const parseYear = fy => +fy.split("-")[0];
 
-    // Stack order bottom to top: adult ops, other, parole, rehab
-    const stackKeys  = ["adult", "other", "parole", "rehab"];
-    const stackFills = { adult: "#333", other: "#777", parole: "#aaa", rehab: "#ccc" };
+    const stackKeys   = ["adult", "other", "parole", "rehab"];
+    const stackFills  = { adult: "#333", other: "#777", parole: "#aaa", rehab: "#ccc" };
     const stackLabels = { adult: "Adult operations", other: "Other", parole: "Parole", rehab: "Rehabilitation" };
 
     d3.csv("data/ca_statewide_corrections_budget.csv").then(raw => {
       const data = raw.map(d => {
-        const total = d.corrections_budget_2024_dollars      ? +d.corrections_budget_2024_dollars      : null;
-        const adult = d.adult_operations_2024_dollars        ? +d.adult_operations_2024_dollars        : null;
-        const par   = d.total_parole_2024_dollars            ? +d.total_parole_2024_dollars            : null;
-        const rehab = d.rehabilitative_programs_2024_dollars ? +d.rehabilitative_programs_2024_dollars : null;
-        const other = (total && adult && par && rehab)       ? total - adult - par - rehab             : null;
-        return { fy: d.fiscal_year, year: parseYear(d.fiscal_year), total, adult, parole: par, rehab, other };
+        const total  = d.corrections_budget_nominal_dollars    ? +d.corrections_budget_nominal_dollars    : null;
+        const adult  = d.adult_operations_expenditures         ? +d.adult_operations_expenditures         : null;
+        const parole = d.total_parole_expenditures             ? +d.total_parole_expenditures             : null;
+        const rehab  = d.rehabilitative_programs_expenditures  ? +d.rehabilitative_programs_expenditures  : null;
+
+        const totalPct = d.corrections_pct_of_general_fund ? +d.corrections_pct_of_general_fund : null;
+
+        // Derive program % of GF: (program / total_cdcr) × total_pct_of_GF
+        const adultPct  = (adult  && total && totalPct) ? (adult  / total) * totalPct : null;
+        const parolePct = (parole && total && totalPct) ? (parole / total) * totalPct : null;
+        const rehabPct  = (rehab  && total && totalPct) ? (rehab  / total) * totalPct : null;
+        const otherPct  = (adultPct !== null && parolePct !== null && rehabPct !== null)
+                          ? totalPct - adultPct - parolePct - rehabPct : null;
+
+        return {
+          fy: d.fiscal_year,
+          year: parseYear(d.fiscal_year),
+          totalPct,
+          adult: adultPct,
+          parole: parolePct,
+          rehab: rehabPct,
+          other: otherPct,
+        };
       });
 
       const x = d3.scaleLinear().domain([1980, 2026]).range([0, width]);
 
       const y = d3.scaleLinear()
-        .domain([0, d3.max(data, d => d.total || 0) * 1.06])
-        .range([height, 0])
-        .nice();
+        .domain([0, 16])
+        .range([height, 0]);
 
       // Grid
       svg.append("g")
         .attr("class", "grid")
-        .call(d3.axisLeft(y).ticks(6).tickSize(-width).tickFormat(""));
+        .call(d3.axisLeft(y).ticks(8).tickSize(-width).tickFormat(""));
 
       // Axes
       svg.append("g")
@@ -131,34 +146,39 @@
 
       svg.append("g")
         .attr("class", "axis")
-        .call(d3.axisLeft(y).ticks(6)
-          .tickFormat(d => d === 0 ? "0" : `$${d3.format(".1f")(d / 1e9)}B`));
+        .call(d3.axisLeft(y).ticks(8).tickFormat(d => `${d}%`));
 
       svg.append("text")
         .attr("transform", "rotate(-90)")
         .attr("x", -(height / 2))
-        .attr("y", -56)
+        .attr("y", -44)
         .attr("text-anchor", "middle")
         .attr("font-size", "0.72rem")
         .attr("fill", "#555")
-        .text("2024 dollars");
+        .text("Share of CA general fund");
 
-      // Pre-2011: single area using total, same fill as adult ops
-      const preData = data.filter(d => d.year <= 2011 && d.total !== null);
+      // Pre-2011: single area using totalPct
+      const preData = data.filter(d => d.year <= 2011 && d.totalPct !== null);
       svg.append("path")
         .datum(preData)
         .attr("fill", "#333")
         .attr("d", d3.area()
           .x(d => x(d.year))
           .y0(y(0))
-          .y1(d => y(d.total))
+          .y1(d => y(d.totalPct))
           .curve(d3.curveMonotoneX)
         );
 
       // Post-2011: stacked areas
       const postData = data
         .filter(d => d.year >= 2011 && d.adult !== null)
-        .map(d => ({ ...d, adult: d.adult || 0, other: d.other || 0, parole: d.parole || 0, rehab: d.rehab || 0 }));
+        .map(d => ({
+          ...d,
+          adult: d.adult || 0,
+          other: d.other || 0,
+          parole: d.parole || 0,
+          rehab: d.rehab || 0,
+        }));
 
       const stacked = d3.stack().keys(stackKeys)(postData);
 
@@ -177,12 +197,11 @@
           .attr("d", areaGen);
       });
 
-      // End labels: midpoint of each band at last data point
+      // End labels at band midpoint
       stacked.forEach(layer => {
         const last = layer[layer.length - 1];
         const bandMid = (last[0] + last[1]) / 2;
-        // Skip label if band is too thin to read
-        if (last[1] - last[0] < 1.5e8) return;
+        if (last[1] - last[0] < 0.15) return; // skip if band < 0.15 percentage points
         svg.append("text")
           .attr("x", x(last.data.year) + 7)
           .attr("y", y(bandMid))
@@ -213,7 +232,7 @@
 
       // Hover
       const bisect = d3.bisector(d => d.year).center;
-      const fmt = v => v != null ? `$${d3.format(".2f")(v / 1e9)}B` : "—";
+      const fmt = v => v != null ? `${d3.format(".2f")(v)}%` : "—";
 
       svg.append("rect")
         .attr("width", width).attr("height", height)
@@ -226,7 +245,7 @@
           if (!d) return;
 
           let html = `<strong>${d.fy}</strong>`;
-          html += `<br>Total: ${fmt(d.total)}`;
+          html += `<br>Total: ${fmt(d.totalPct)}`;
           if (d.adult !== null) {
             html += `<br>Adult ops: ${fmt(d.adult)}`;
             html += `<br>Parole: ${fmt(d.parole)}`;

@@ -66,11 +66,11 @@
 <body>
 
   <h1>CDCR Spending as a Share of California's General Fund, FY 1980–81 to 2025–26</h1>
-  <p class="subtitle">Total and program breakdown as percent of General Fund expenditures</p>
+  <p class="subtitle">CDCR total spending as percent of General Fund expenditures</p>
   <div id="chart"></div>
   <p class="source-note">
     Sources: California Budget &amp; Policy Center; LAO Budget Analyses; DOF Chart A; Governor's Budget chapter 5210 (ebudget.ca.gov).<br>
-    Program-level breakdown available from FY 2011–12. Percentages calculated against total General Fund expenditures.
+    Percentage calculated as CDCR total budget / total General Fund expenditures × 100.
   </p>
 
   <div class="tooltip" id="tooltip"></div>
@@ -98,45 +98,21 @@
 
     const parseYear = fy => +fy.split("-")[0];
 
-    const series = [
-      { key: "adultPct",  label: "Adult operations", stroke: "#1a1a1a", width: 2.2, dash: null    },
-      { key: "parolePct", label: "Parole",            stroke: "#555",    width: 1.8, dash: "7 4"   },
-      { key: "otherPct",  label: "Other",             stroke: "#888",    width: 1.8, dash: "2.5 4" },
-      { key: "rehabPct",  label: "Rehabilitation",    stroke: "#bbb",    width: 1.6, dash: "1 4"   },
-    ];
 
     d3.csv("data/ca_statewide_corrections_budget.csv").then(raw => {
-      const data = raw.map(d => {
-        const gf    = d.total_general_fund_expenditures          ? +d.total_general_fund_expenditures          : null;
-        const total = d.corrections_budget_nominal_dollars       ? +d.corrections_budget_nominal_dollars       : null;
-        const adult = d.adult_operations_expenditures            ? +d.adult_operations_expenditures            : null;
-        const par   = d.total_parole_expenditures                ? +d.total_parole_expenditures                : null;
-        const rehab = d.rehabilitative_programs_expenditures     ? +d.rehabilitative_programs_expenditures     : null;
-        const other = (total && adult && par && rehab)
-          ? total - adult - par - rehab : null;
-
-        return {
-          fy:       d.fiscal_year,
-          year:     parseYear(d.fiscal_year),
-          totalPct: d.corrections_pct_of_general_fund ? +d.corrections_pct_of_general_fund : null,
-          adultPct:  (adult && gf) ? adult / gf * 100 : null,
-          parolePct: (par   && gf) ? par   / gf * 100 : null,
-          rehabPct:  (rehab && gf) ? rehab / gf * 100 : null,
-          otherPct:  (other && gf) ? other / gf * 100 : null,
-        };
-      });
+      const data = raw.map(d => ({
+        fy:       d.fiscal_year,
+        year:     parseYear(d.fiscal_year),
+        totalPct: d.corrections_pct_of_general_fund ? +d.corrections_pct_of_general_fund : null,
+      }));
 
       const x = d3.scaleLinear()
         .domain([1980, 2026])
         .range([0, width]);
 
-      const allVals = data.flatMap(d =>
-        [d.totalPct, d.adultPct, d.parolePct, d.rehabPct, d.otherPct].filter(v => v !== null)
-      );
       const y = d3.scaleLinear()
-        .domain([0, d3.max(allVals) * 1.1])
-        .range([height, 0])
-        .nice();
+        .domain([0, 20])
+        .range([height, 0]);
 
       // Grid
       svg.append("g")
@@ -153,7 +129,7 @@
         .attr("class", "axis")
         .call(d3.axisLeft(y).ticks(6).tickFormat(d => `${d}%`));
 
-      // Total line (thin reference, full span)
+      // Total line
       const totalLine = d3.line()
         .defined(d => d.totalPct !== null)
         .x(d => x(d.year))
@@ -163,69 +139,10 @@
       svg.append("path")
         .datum(data)
         .attr("fill", "none")
-        .attr("stroke", "#ccc")
-        .attr("stroke-width", 1.2)
+        .attr("stroke", "#1a1a1a")
+        .attr("stroke-width", 2.5)
+        .attr("stroke-linecap", "round")
         .attr("d", totalLine);
-
-      const lastTotal = [...data].reverse().find(d => d.totalPct !== null);
-      if (lastTotal) {
-        svg.append("text")
-          .attr("x", x(lastTotal.year) + 7)
-          .attr("y", y(lastTotal.totalPct))
-          .attr("dominant-baseline", "middle")
-          .attr("font-size", "0.72rem")
-          .attr("fill", "#aaa")
-          .text("Total");
-      }
-
-      // Annotation for breakdown start
-      const breakYear = 2011;
-      svg.append("line")
-        .attr("x1", x(breakYear)).attr("x2", x(breakYear))
-        .attr("y1", 0).attr("y2", height)
-        .attr("stroke", "#ddd")
-        .attr("stroke-width", 1)
-        .attr("stroke-dasharray", "4 3");
-
-      svg.append("text")
-        .attr("class", "annotation")
-        .attr("x", x(breakYear) + 5)
-        .attr("y", 12)
-        .text("Program detail");
-      svg.append("text")
-        .attr("class", "annotation")
-        .attr("x", x(breakYear) + 5)
-        .attr("y", 24)
-        .text("from 2011–12");
-
-      // Component lines
-      series.forEach(s => {
-        const lineGen = d3.line()
-          .defined(d => d[s.key] !== null)
-          .x(d => x(d.year))
-          .y(d => y(d[s.key]))
-          .curve(d3.curveMonotoneX);
-
-        svg.append("path")
-          .datum(data)
-          .attr("fill", "none")
-          .attr("stroke", s.stroke)
-          .attr("stroke-width", s.width)
-          .attr("stroke-dasharray", s.dash)
-          .attr("stroke-linecap", "round")
-          .attr("d", lineGen);
-
-        const last = [...data].reverse().find(d => d[s.key] !== null);
-        if (last) {
-          svg.append("text")
-            .attr("x", x(last.year) + 7)
-            .attr("y", y(last[s.key]))
-            .attr("dominant-baseline", "middle")
-            .attr("font-size", "0.72rem")
-            .attr("fill", s.stroke)
-            .text(s.label);
-        }
-      });
 
       // Hover
       const bisect = d3.bisector(d => d.year).center;
@@ -242,11 +159,7 @@
           if (!d) return;
 
           let html = `<strong>${d.fy}</strong>`;
-          html += `<br>Total: ${fmt(d.totalPct)}`;
-          if (d.adultPct  !== null) html += `<br>Adult ops: ${fmt(d.adultPct)}`;
-          if (d.parolePct !== null) html += `<br>Parole: ${fmt(d.parolePct)}`;
-          if (d.rehabPct  !== null) html += `<br>Rehab: ${fmt(d.rehabPct)}`;
-          if (d.otherPct  !== null) html += `<br>Other: ${fmt(d.otherPct)}`;
+          if (d.totalPct !== null) html += `<br>CDCR share: ${fmt(d.totalPct)}`;
 
           tooltip
             .style("opacity", 1)
