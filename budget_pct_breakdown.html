@@ -102,19 +102,18 @@
 
     d3.csv("data/ca_statewide_corrections_budget.csv").then(raw => {
       const data = raw.map(d => {
+        const gf     = d.total_general_fund_expenditures       ? +d.total_general_fund_expenditures       : null;
         const total  = d.corrections_budget_nominal_dollars    ? +d.corrections_budget_nominal_dollars    : null;
         const adult  = d.adult_operations_expenditures         ? +d.adult_operations_expenditures         : null;
         const parole = d.total_parole_expenditures             ? +d.total_parole_expenditures             : null;
         const rehab  = d.rehabilitative_programs_expenditures  ? +d.rehabilitative_programs_expenditures  : null;
 
-        const totalPct = d.corrections_pct_of_general_fund ? +d.corrections_pct_of_general_fund : null;
-
-        // Derive program % of GF: (program / total_cdcr) × total_pct_of_GF
-        const adultPct  = (adult  && total && totalPct) ? (adult  / total) * totalPct : null;
-        const parolePct = (parole && total && totalPct) ? (parole / total) * totalPct : null;
-        const rehabPct  = (rehab  && total && totalPct) ? (rehab  / total) * totalPct : null;
-        const otherPct  = (adultPct !== null && parolePct !== null && rehabPct !== null)
-                          ? totalPct - adultPct - parolePct - rehabPct : null;
+        const totalPct  = d.corrections_pct_of_general_fund ? +d.corrections_pct_of_general_fund : null;
+        const adultPct  = (adult  && gf) ? adult  / gf * 100 : null;
+        const parolePct = (parole && gf) ? parole / gf * 100 : null;
+        const rehabPct  = (rehab  && gf) ? rehab  / gf * 100 : null;
+        const otherPct  = (total  && gf && adultPct !== null && parolePct !== null && rehabPct !== null)
+                          ? (total / gf * 100) - adultPct - parolePct - rehabPct : null;
 
         return {
           fy: d.fiscal_year,
