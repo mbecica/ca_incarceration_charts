@@ -71,7 +71,8 @@
   <div id="chart"></div>
   <p class="source-note">
     Sources: CDCR historical records (Zimring &amp; Hawkins compilation); BJS Annual Parole Survey; CA DOJ OpenJustice; CA Board of State and Community Corrections (BSCC) Jail Profile Survey.<br>
-    Parole data available from 2000; probation from 2003; county jail from 2000.
+    Parole data available from 2000; probation from 2003; county jail from 2000.<br>
+    State Parole includes CRPP supervision (data available from 2024). County Probation includes PRCS and mandatory supervision, both created by AB 109 (Public Safety Realignment, 2011); data available from 2013.
   </p>
 
   <div class="tooltip" id="tooltip"></div>
@@ -105,11 +106,12 @@
     ];
 
     d3.csv("data/ca_statewide_prison_population.csv").then(raw => {
+      const num = (v) => v ? +v : 0;
       const data = raw.map(d => ({
         year:      +d.year,
         prison:    d.prison_population  ? +d.prison_population  : null,
-        parole:    d.parole_population  ? +d.parole_population  : null,
-        probation: d.total_probation    ? +d.total_probation    : null,
+        parole:    d.parole_population  ? num(d.parole_population) + num(d.crpp_supervision) : null,
+        probation: d.total_probation    ? num(d.total_probation) + num(d.prcs_population) + num(d.mandatory_supervision) : null,
         jail:      d.jail_population    ? +d.jail_population    : null,
       }));
 

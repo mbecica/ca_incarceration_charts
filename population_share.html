@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>California Justice-Involved Population by Type, 2003–2024</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #fff;
+      color: #1a1a1a;
+      margin: 0;
+      padding: 2.5rem 3rem;
+      max-width: 960px;
+    }
+
+    h1 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin: 0 0 0.2rem 0;
+      letter-spacing: -0.01em;
+    }
+
+    .subtitle {
+      font-size: 0.82rem;
+      color: #666;
+      margin: 0 0 1.75rem 0;
+    }
+
+    .axis text {
+      font-size: 0.72rem;
+      fill: #555;
+    }
+
+    .axis .domain { display: none; }
+    .axis line { stroke: #ccc; }
+
+    .grid line { stroke: #ebebeb; }
+    .grid .domain { display: none; }
+
+    .legend {
+      display: flex;
+      gap: 1.4rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+      font-size: 0.72rem;
+      color: #555;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .legend-swatch {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+    }
+
+    .source-note {
+      font-size: 0.7rem;
+      color: #888;
+      margin-top: 0.6rem;
+      line-height: 1.5;
+    }
+
+    .tooltip {
+      position: fixed;
+      background: #1a1a1a;
+      color: #fff;
+      padding: 0.45rem 0.65rem;
+      border-radius: 3px;
+      font-size: 0.72rem;
+      line-height: 1.6;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.1s;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>California Justice-Involved Population by Type, 2003–2024</h1>
+  <p class="subtitle">Share of total justice-involved population in state prison, state parole, county jail, and county probation</p>
+  <div id="legend" class="legend"></div>
+  <div id="chart"></div>
+  <p class="source-note">
+    Sources: CDCR historical records; BJS Annual Parole Survey; CA DOJ OpenJustice; CA Board of State and Community Corrections (BSCC) Jail Profile Survey.<br>
+    Total is the sum of state prison, state parole, county jail, and county probation populations.<br>
+    State Parole includes CRPP supervision (data available from 2024). County Probation includes PRCS and mandatory supervision, both created by AB 109 (Public Safety Realignment, 2011); data available from 2013.
+  </p>
+
+  <div class="tooltip" id="tooltip"></div>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+    const margin = { top: 16, right: 24, bottom: 44, left: 52 };
+    const totalWidth = 860;
+    const totalHeight = 420;
+    const width  = totalWidth  - margin.left - margin.right;
+    const height = totalHeight - margin.top  - margin.bottom;
+
+    // Stack order: probation on bottom, then jail, then parole, then prison on top
+    const keys = ["probation", "jail", "parole", "prison"];
+    const meta = {
+      prison:    { label: "State Prison",     fill: "#1a1a1a" },
+      parole:    { label: "State Parole",     fill: "#bbb"    },
+      jail:      { label: "County Jail",      fill: "#555"    },
+      probation: { label: "County Probation", fill: "#ddd"    },
+    };
+
+    const svg = d3.select("#chart")
+      .append("svg")
+        .attr("width",  totalWidth)
+        .attr("height", totalHeight)
+        .attr("role", "img")
+        .attr("aria-label",
+          "Stacked bar chart showing each group's share of California's total justice-involved " +
+          "population from 2003 to 2024")
+      .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const tooltip = d3.select("#tooltip");
+
+    // Legend
+    const legendEl = d3.select("#legend");
+    [...keys].reverse().forEach(k => {
+      const item = legendEl.append("div").attr("class", "legend-item");
+      item.append("svg")
+        .attr("class", "legend-swatch")
+        .append("rect")
+          .attr("width", 14).attr("height", 14)
+          .attr("fill", meta[k].fill);
+      item.append("span").text(meta[k].label);
+    });
+
+    d3.csv("data/ca_statewide_prison_population.csv").then(raw => {
+      const data = raw
+        .map(d => {
+          const num    = (v) => v ? +v : 0;
+          const prison = d.prison_population ? +d.prison_population : null;
+          const parole = d.parole_population ? num(d.parole_population) + num(d.crpp_supervision) : null;
+          const prob   = d.total_probation   ? num(d.total_probation) + num(d.prcs_population) + num(d.mandatory_supervision) : null;
+          const jail   = d.jail_population   ? +d.jail_population   : null;
+          if (prison === null || parole === null || prob === null || jail === null) return null;
+          const total = prison + parole + prob + jail;
+          return {
+            year:      +d.year,
+            prison:    prison / total * 100,
+            parole:    parole / total * 100,
+            probation: prob   / total * 100,
+            jail:      jail   / total * 100,
+          };
+        })
+        .filter(d => d !== null);
+
+      const stack = d3.stack().keys(keys);
+      const stacked = stack(data);
+
+      const x = d3.scaleBand()
+        .domain(data.map(d => d.year))
+        .range([0, width])
+        .padding(0.18);
+
+      const y = d3.scaleLinear()
+        .domain([0, 100])
+        .range([height, 0]);
+
+      // Grid
+      svg.append("g")
+        .attr("class", "grid")
+        .call(
+          d3.axisLeft(y)
+            .ticks(5)
+            .tickSize(-width)
+            .tickFormat("")
+        );
+
+      // Axes
+      svg.append("g")
+        .attr("class", "axis")
+        .attr("transform", `translate(0,${height})`)
+        .call(
+          d3.axisBottom(x)
+            .tickValues(data.filter((_, i) => i % 3 === 0).map(d => d.year))
+            .tickFormat(d3.format("d"))
+        );
+
+      svg.append("g")
+        .attr("class", "axis")
+        .call(
+          d3.axisLeft(y)
+            .ticks(5)
+            .tickFormat(d => `${d}%`)
+        );
+
+      // Bars
+      stacked.forEach(layer => {
+        svg.append("g")
+          .selectAll("rect")
+          .data(layer)
+          .join("rect")
+            .attr("x",      d => x(d.data.year))
+            .attr("y",      d => y(d[1]))
+            .attr("height", d => y(d[0]) - y(d[1]))
+            .attr("width",  x.bandwidth())
+            .attr("fill",   meta[layer.key].fill)
+            .on("mousemove", function(event, d) {
+              const fmt = v => `${v.toFixed(1)}%`;
+              let html = `<strong>${d.data.year}</strong>`;
+              html += `<br>State Prison: ${fmt(d.data.prison)}`;
+              html += `<br>State Parole: ${fmt(d.data.parole)}`;
+              html += `<br>County Jail: ${fmt(d.data.jail)}`;
+              html += `<br>County Probation: ${fmt(d.data.probation)}`;
+              tooltip
+                .style("opacity", 1)
+                .style("left", (event.clientX + 14) + "px")
+                .style("top",  (event.clientY - 36) + "px")
+                .html(html);
+            })
+            .on("mouseleave", () => tooltip.style("opacity", 0));
+      });
+    });
+  </script>
+</body>
+</html>
