@@ -65,11 +65,11 @@
 <body>
 
   <h1>California Incarceration Rate, 1920–2025</h1>
-  <p class="subtitle">State prison, parole, and probation populations per 100,000 residents</p>
+  <p class="subtitle">State prison, state parole, county jail, and county probation populations per 100,000 residents</p>
   <div id="chart"></div>
   <p class="source-note">
-    Sources: CDCR historical records (Zimring &amp; Hawkins compilation); BJS Annual Parole Survey; CA DOJ OpenJustice; FRED CAPOP (US Census Bureau).<br>
-    Parole rate available from 2000; probation rate from 2003. Rates calculated as population / California resident population × 100,000.
+    Sources: CDCR historical records (Zimring &amp; Hawkins compilation); BJS Annual Parole Survey; CA DOJ OpenJustice; FRED CAPOP (US Census Bureau); CA Board of State and Community Corrections (BSCC) Jail Profile Survey.<br>
+    Parole rate available from 2000; probation rate from 2003; county jail rate from 2000. Rates calculated as population / California resident population × 100,000.
   </p>
 
   <div class="tooltip" id="tooltip"></div>
@@ -89,16 +89,17 @@
         .attr("role", "img")
         .attr("aria-label",
           "Line chart of California incarceration rate per 100,000 residents from 1920 to 2025, " +
-          "showing state prison, parole, and probation rates")
+          "showing state prison, state parole, county jail, and county probation rates")
       .append("g")
         .attr("transform", `translate(${margin.left},${margin.top})`);
 
     const tooltip = d3.select("#tooltip");
 
     const series = [
-      { key: "prisonRate",    label: "State prison",  stroke: "#1a1a1a", width: 2.2, dash: null    },
-      { key: "probationRate", label: "Probation",      stroke: "#555",    width: 1.8, dash: "7 4"   },
-      { key: "paroleRate",    label: "Parole",          stroke: "#999",    width: 1.8, dash: "2.5 4" },
+      { key: "prisonRate",    label: "State Prison",    stroke: "#1a1a1a", width: 2.2, dash: null   },
+      { key: "paroleRate",    label: "State Parole",    stroke: "#aaa",    width: 1.8, dash: null   },
+      { key: "jailRate",      label: "County Jail",     stroke: "#1a1a1a", width: 1.8, dash: "6 4" },
+      { key: "probationRate", label: "County Probation",stroke: "#aaa",    width: 1.8, dash: "6 4" },
     ];
 
     d3.csv("data/ca_statewide_prison_population.csv").then(raw => {
@@ -107,11 +108,13 @@
         const prison = d.prison_population     ? +d.prison_population     : null;
         const parole = d.parole_population     ? +d.parole_population     : null;
         const prob   = d.total_probation       ? +d.total_probation       : null;
+        const jail   = d.jail_population       ? +d.jail_population       : null;
         return {
           year:         +d.year,
           prisonRate:    (prison && pop) ? prison / pop * 100000 : null,
           paroleRate:    (parole && pop) ? parole / pop * 100000 : null,
           probationRate: (prob   && pop) ? prob   / pop * 100000 : null,
+          jailRate:      (jail   && pop) ? jail   / pop * 100000 : null,
         };
       });
 
@@ -120,7 +123,7 @@
         .range([0, width]);
 
       const allVals = data.flatMap(d =>
-        [d.prisonRate, d.paroleRate, d.probationRate].filter(v => v !== null)
+        [d.prisonRate, d.paroleRate, d.probationRate, d.jailRate].filter(v => v !== null)
       );
       const y = d3.scaleLinear()
         .domain([0, d3.max(allVals) * 1.06])
@@ -211,9 +214,10 @@
           if (!d) return;
 
           let html = `<strong>${d.year}</strong>`;
-          if (d.prisonRate    !== null) html += `<br>Prison: ${fmt(d.prisonRate)} per 100k`;
-          if (d.paroleRate    !== null) html += `<br>Parole: ${fmt(d.paroleRate)} per 100k`;
-          if (d.probationRate !== null) html += `<br>Probation: ${fmt(d.probationRate)} per 100k`;
+          if (d.prisonRate    !== null) html += `<br>State Prison: ${fmt(d.prisonRate)} per 100k`;
+          if (d.paroleRate    !== null) html += `<br>State Parole: ${fmt(d.paroleRate)} per 100k`;
+          if (d.jailRate      !== null) html += `<br>County Jail: ${fmt(d.jailRate)} per 100k`;
+          if (d.probationRate !== null) html += `<br>County Probation: ${fmt(d.probationRate)} per 100k`;
 
           tooltip
             .style("opacity", 1)
