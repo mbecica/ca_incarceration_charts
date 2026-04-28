@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>California Community Corrections Population per 100k Residents, 2011–2024</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #fff;
+      color: #1a1a1a;
+      margin: 0;
+      padding: 2.5rem 3rem;
+      max-width: 960px;
+    }
+
+    h1 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin: 0 0 0.2rem 0;
+      letter-spacing: -0.01em;
+    }
+
+    .subtitle {
+      font-size: 0.82rem;
+      color: #666;
+      margin: 0 0 1.75rem 0;
+    }
+
+    .axis text { font-size: 0.72rem; fill: #555; }
+    .axis .domain { display: none; }
+    .axis line { stroke: #ccc; }
+
+    .grid line { stroke: #ebebeb; }
+    .grid .domain { display: none; }
+
+    .annotation { font-size: 0.68rem; fill: #888; }
+
+    .source-note {
+      font-size: 0.7rem;
+      color: #888;
+      margin-top: 0.6rem;
+      line-height: 1.5;
+    }
+
+    .tooltip {
+      position: fixed;
+      background: #1a1a1a;
+      color: #fff;
+      padding: 0.45rem 0.65rem;
+      border-radius: 3px;
+      font-size: 0.72rem;
+      line-height: 1.6;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.1s;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>California Community Corrections Population per 100k Residents, 2011–2024</h1>
+  <p class="subtitle">Adults under non-incarcerated supervision per 100,000 California residents: parole, probation, PRCS, mandatory supervision, and CRPP</p>
+  <div id="chart"></div>
+  <p class="source-note">
+    Sources: CDCR Monthly Report of Population &amp; Data Points; LAO; CA DOJ OpenJustice (probation); CPOC California Probation Summary; LAO Figure 1 (PRCS); FRED CAPOP (US Census Bureau, California resident population).<br>
+    Rate = program population ÷ California resident population × 100,000. AB 109 (Public Safety Realignment) created PRCS and Mandatory Supervision in October 2011; CRPP began mid-2016. PRCS and MS shown from 2013 (first year with verified CPOC counts).<br>
+    All values are December snapshots except PRCS/MS (June 30 from CPOC; quarterly average from LAO 2019&ndash;2023).
+  </p>
+
+  <div class="tooltip" id="tooltip"></div>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+    const margin = { top: 20, right: 158, bottom: 44, left: 78 };
+    const totalWidth = 880;
+    const totalHeight = 460;
+    const width  = totalWidth  - margin.left - margin.right;
+    const height = totalHeight - margin.top  - margin.bottom;
+
+    const svg = d3.select("#chart")
+      .append("svg")
+        .attr("width",  totalWidth)
+        .attr("height", totalHeight)
+        .attr("role", "img")
+        .attr("aria-label",
+          "Stacked area chart of California community corrections population by program type per 100,000 residents, 2011 to 2024")
+      .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const tooltip = d3.select("#tooltip");
+
+    // Stack order bottom to top: probation, parole, PRCS, MS, CRPP
+    const stackKeys  = ["probation", "parole", "prcs", "ms", "crpp"];
+    const stackFills = {
+      probation: "#333",
+      parole:    "#666",
+      prcs:      "#999",
+      ms:        "#bbb",
+      crpp:      "#dcdcdc",
+    };
+    const stackLabels = {
+      probation: "Probation",
+      parole:    "Parole",
+      prcs:      "PRCS",
+      ms:        "Mandatory supervision",
+      crpp:      "CRPP",
+    };
+
+    d3.csv("data/ca_statewide_prison_population.csv").then(raw => {
+      const data = raw
+        .filter(d => +d.year >= 2011 && +d.year <= 2024)
+        .map(d => {
+          const yr = +d.year;
+          const num = v => v ? +v : 0;
+          const pop = +d.ca_state_population;
+          const rate = v => v / pop * 1e5;
+          // PRCS and MS displayed from 2013 only (pre-2013 data is unverified estimates)
+          const showPrcsMs = yr >= 2013;
+          return {
+            year: yr,
+            statePop: pop,
+            probation: rate(num(d.total_probation)),
+            parole:    rate(num(d.parole_population)),
+            prcs:      showPrcsMs ? rate(num(d.prcs_population)) : 0,
+            ms:        showPrcsMs ? rate(num(d.mandatory_supervision)) : 0,
+            crpp:      rate(num(d.crpp_supervision)),
+          };
+        });
+
+      const x = d3.scaleLinear().domain([2011, 2024]).range([0, width]);
+
+      const stacked = d3.stack().keys(stackKeys)(data);
+
+      const yMax = d3.max(stacked, layer => d3.max(layer, d => d[1]));
+
+      const y = d3.scaleLinear()
+        .domain([0, yMax * 1.06])
+        .range([height, 0])
+        .nice();
+
+      svg.append("g")
+        .attr("class", "grid")
+        .call(d3.axisLeft(y).ticks(6).tickSize(-width).tickFormat(""));
+
+      svg.append("g")
+        .attr("class", "axis")
+        .attr("transform", `translate(0,${height})`)
+        .call(d3.axisBottom(x).ticks(13).tickFormat(d3.format("d")));
+
+      svg.append("g")
+        .attr("class", "axis")
+        .call(d3.axisLeft(y).ticks(6)
+          .tickFormat(d => d === 0 ? "0" : d3.format(",.0f")(d)));
+
+      svg.append("text")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -(height / 2))
+        .attr("y", -60)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "0.72rem")
+        .attr("fill", "#555")
+        .text("Population per 100,000 residents");
+
+      const areaGen = d3.area()
+        .x(d => x(d.data.year))
+        .y0(d => y(d[0]))
+        .y1(d => y(d[1]))
+        .curve(d3.curveMonotoneX);
+
+      stacked.forEach(layer => {
+        svg.append("path")
+          .datum(layer)
+          .attr("fill", stackFills[layer.key])
+          .attr("stroke", "#fff")
+          .attr("stroke-width", 0.5)
+          .attr("d", areaGen);
+      });
+
+      // End labels at last data point — only for non-trivial bands
+      stacked.forEach(layer => {
+        const last = layer[layer.length - 1];
+        const bandMid = (last[0] + last[1]) / 2;
+        if (last[1] - last[0] < 12) return;
+        svg.append("text")
+          .attr("x", x(last.data.year) + 7)
+          .attr("y", y(bandMid))
+          .attr("dominant-baseline", "middle")
+          .attr("font-size", "0.72rem")
+          .attr("fill", stackFills[layer.key] === "#dcdcdc" ? "#888" : stackFills[layer.key])
+          .text(stackLabels[layer.key]);
+      });
+
+      // Annotation for PRCS/MS start
+      svg.append("line")
+        .attr("x1", x(2013)).attr("x2", x(2013))
+        .attr("y1", 0).attr("y2", height)
+        .attr("stroke", "#bbb")
+        .attr("stroke-width", 1)
+        .attr("stroke-dasharray", "4 3");
+
+      svg.append("text")
+        .attr("class", "annotation")
+        .attr("x", x(2013) + 5)
+        .attr("y", 12)
+        .text("PRCS &amp; MS");
+      svg.append("text")
+        .attr("class", "annotation")
+        .attr("x", x(2013) + 5)
+        .attr("y", 24)
+        .text("from 2013");
+
+      // Hover
+      const bisect = d3.bisector(d => d.year).center;
+      const fmt = v => v ? d3.format(",.1f")(v) : "—";
+
+      svg.append("rect")
+        .attr("width", width).attr("height", height)
+        .attr("fill", "none").attr("pointer-events", "all")
+        .on("mousemove", function(event) {
+          const [mx] = d3.pointer(event);
+          const year = Math.round(x.invert(mx));
+          const i = bisect(data, year);
+          const d = data[i];
+          if (!d) return;
+          const total = d.probation + d.parole + d.prcs + d.ms + d.crpp;
+          let html = `<strong>${d.year}</strong> <span style="color:#aaa">(per 100k)</span>`;
+          html += `<br>Probation: ${fmt(d.probation)}`;
+          html += `<br>Parole: ${fmt(d.parole)}`;
+          html += `<br>PRCS: ${fmt(d.prcs)}`;
+          html += `<br>Mandatory supv: ${fmt(d.ms)}`;
+          html += `<br>CRPP: ${fmt(d.crpp)}`;
+          html += `<br><strong>Total: ${fmt(total)}</strong>`;
+          html += `<br><span style="color:#aaa">CA pop: ${d3.format(",")(d.statePop)}</span>`;
+          tooltip
+            .style("opacity", 1)
+            .style("left", (event.clientX + 14) + "px")
+            .style("top",  (event.clientY - 36) + "px")
+            .html(html);
+        })
+        .on("mouseleave", () => tooltip.style("opacity", 0));
+    });
+  </script>
+</body>
+</html>

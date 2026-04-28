@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>California Community Corrections Cost per Person, FY 2011–12 to 2023–24 (2024 dollars)</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #fff;
+      color: #1a1a1a;
+      margin: 0;
+      padding: 2.5rem 3rem;
+      max-width: 960px;
+    }
+
+    h1 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin: 0 0 0.2rem 0;
+      letter-spacing: -0.01em;
+    }
+
+    .subtitle {
+      font-size: 0.82rem;
+      color: #666;
+      margin: 0 0 1.75rem 0;
+    }
+
+    .axis text { font-size: 0.72rem; fill: #555; }
+    .axis .domain { display: none; }
+    .axis line { stroke: #ccc; }
+
+    .grid line { stroke: #ebebeb; }
+    .grid .domain { display: none; }
+
+    .annotation { font-size: 0.68rem; fill: #888; }
+
+    .source-note {
+      font-size: 0.7rem;
+      color: #888;
+      margin-top: 0.6rem;
+      line-height: 1.5;
+    }
+
+    .tooltip {
+      position: fixed;
+      background: #1a1a1a;
+      color: #fff;
+      padding: 0.45rem 0.65rem;
+      border-radius: 3px;
+      font-size: 0.72rem;
+      line-height: 1.6;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.1s;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>California Community Corrections Cost per Person, FY 2011–12 to 2023–24</h1>
+  <p class="subtitle">Annual spending per supervised person, 2024 dollars</p>
+  <div id="chart"></div>
+  <p class="source-note">
+    State parole = CDCR Parole Operations + Board of Parole Hearings (all funds) ÷ Dec parole population.<br>
+    County supervision = sum of all 58 counties' probation expenditures (all funds) ÷ combined probation + PRCS + mandatory supervision population. The county budget is treated as funding all county-supervised populations together because PRCS and mandatory supervision do not have separate funding lines.<br>
+    Sources: Governor's Budget chapter 5210; CA State Controller's Office (uctr-c2j8 + ju3w-4gxp); CDCR Monthly Report of Population; CA DOJ OpenJustice; CPOC; LAO. Adjusted to 2024 dollars using BLS CPI-U fiscal-year averages.
+  </p>
+
+  <div class="tooltip" id="tooltip"></div>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+    const margin = { top: 20, right: 168, bottom: 44, left: 78 };
+    const totalWidth = 880;
+    const totalHeight = 460;
+    const width  = totalWidth  - margin.left - margin.right;
+    const height = totalHeight - margin.top  - margin.bottom;
+
+    const svg = d3.select("#chart")
+      .append("svg")
+        .attr("width",  totalWidth)
+        .attr("height", totalHeight)
+        .attr("role", "img")
+        .attr("aria-label",
+          "Two-line chart of cost per person for state parole and combined county supervision, FY 2011-12 to 2023-24, in 2024 dollars")
+      .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const tooltip = d3.select("#tooltip");
+
+    const series = [
+      { key: "parole", label: "State parole",      color: "#1a1a1a" },
+      { key: "county", label: "County supervision", color: "#888"   },
+    ];
+
+    d3.csv("data/community_corrections_cost_per_person.csv").then(raw => {
+      const data = raw.map(d => ({
+        fy: d.fiscal_year,
+        year: +d.fy_end_year,
+        parole: d.state_parole_cost_per_person_2024 ? +d.state_parole_cost_per_person_2024 : null,
+        county: d.county_supervision_cost_per_person_2024 ? +d.county_supervision_cost_per_person_2024 : null,
+        parolePop: +d.state_parole_pop,
+        countyPop: +d.county_supervision_pop,
+      }));
+
+      const x = d3.scaleLinear().domain([2012, 2024]).range([0, width]);
+
+      const yMax = d3.max(data, d => Math.max(d.parole || 0, d.county || 0)) * 1.08;
+      const y = d3.scaleLinear().domain([0, yMax]).range([height, 0]).nice();
+
+      svg.append("g")
+        .attr("class", "grid")
+        .call(d3.axisLeft(y).ticks(6).tickSize(-width).tickFormat(""));
+
+      svg.append("g")
+        .attr("class", "axis")
+        .attr("transform", `translate(0,${height})`)
+        .call(d3.axisBottom(x).ticks(13)
+          .tickFormat(d => `'${String(d - 1).slice(2)}–${String(d).slice(2)}`));
+
+      svg.append("g")
+        .attr("class", "axis")
+        .call(d3.axisLeft(y).ticks(6)
+          .tickFormat(d => d === 0 ? "0" : `$${d3.format(",")(d / 1000)}k`));
+
+      svg.append("text")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -(height / 2))
+        .attr("y", -64)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "0.72rem")
+        .attr("fill", "#555")
+        .text("Cost per person (2024 dollars)");
+
+      const lineGen = key => d3.line()
+        .x(d => x(d.year))
+        .y(d => y(d[key]))
+        .defined(d => d[key] != null)
+        .curve(d3.curveMonotoneX);
+
+      series.forEach(s => {
+        svg.append("path")
+          .datum(data)
+          .attr("fill", "none")
+          .attr("stroke", s.color)
+          .attr("stroke-width", 2)
+          .attr("d", lineGen(s.key));
+
+        svg.selectAll(`.dot-${s.key}`)
+          .data(data.filter(d => d[s.key] != null))
+          .join("circle")
+            .attr("cx", d => x(d.year))
+            .attr("cy", d => y(d[s.key]))
+            .attr("r", 2.5)
+            .attr("fill", s.color);
+
+        // End label
+        const last = data.filter(d => d[s.key] != null).slice(-1)[0];
+        svg.append("text")
+          .attr("x", x(last.year) + 8)
+          .attr("y", y(last[s.key]))
+          .attr("dominant-baseline", "middle")
+          .attr("font-size", "0.72rem")
+          .attr("fill", s.color)
+          .text(s.label);
+      });
+
+      // Hover overlay
+      const bisect = d3.bisector(d => d.year).center;
+      const fmt = v => v != null ? `$${d3.format(",.0f")(v)}` : "—";
+
+      svg.append("rect")
+        .attr("width", width).attr("height", height)
+        .attr("fill", "none").attr("pointer-events", "all")
+        .on("mousemove", function(event) {
+          const [mx] = d3.pointer(event);
+          const year = Math.round(x.invert(mx));
+          const i = bisect(data, year);
+          const d = data[i];
+          if (!d) return;
+          let html = `<strong>FY ${d.fy}</strong>`;
+          html += `<br>State parole: ${fmt(d.parole)}/person`;
+          html += `<br>&nbsp;&nbsp;(pop ${d3.format(",")(d.parolePop)})`;
+          html += `<br>County supervision: ${fmt(d.county)}/person`;
+          html += `<br>&nbsp;&nbsp;(pop ${d3.format(",")(d.countyPop)})`;
+          tooltip
+            .style("opacity", 1)
+            .style("left", (event.clientX + 14) + "px")
+            .style("top",  (event.clientY - 36) + "px")
+            .html(html);
+        })
+        .on("mouseleave", () => tooltip.style("opacity", 0));
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>California Community Corrections Funding, FY 2011–12 to 2023–24 (2024 dollars)</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #fff;
+      color: #1a1a1a;
+      margin: 0;
+      padding: 2.5rem 3rem;
+      max-width: 960px;
+    }
+
+    h1 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin: 0 0 0.2rem 0;
+      letter-spacing: -0.01em;
+    }
+
+    .subtitle {
+      font-size: 0.82rem;
+      color: #666;
+      margin: 0 0 1.75rem 0;
+    }
+
+    .axis text { font-size: 0.72rem; fill: #555; }
+    .axis .domain { display: none; }
+    .axis line { stroke: #ccc; }
+
+    .grid line { stroke: #ebebeb; }
+    .grid .domain { display: none; }
+
+    .annotation { font-size: 0.68rem; fill: #888; }
+
+    .source-note {
+      font-size: 0.7rem;
+      color: #888;
+      margin-top: 0.6rem;
+      line-height: 1.5;
+    }
+
+    .tooltip {
+      position: fixed;
+      background: #1a1a1a;
+      color: #fff;
+      padding: 0.45rem 0.65rem;
+      border-radius: 3px;
+      font-size: 0.72rem;
+      line-height: 1.6;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.1s;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>California Community Corrections Funding, FY 2011–12 to 2023–24</h1>
+  <p class="subtitle">Spending on parole, probation, and PRCS county allocations, all funds, 2024 dollars</p>
+  <div id="chart"></div>
+  <p class="source-note">
+    Sources: Governor's Budget chapter 5210 (CDCR parole = DAPO + Board of Parole Hearings); CA State Controller's Office <em>uctr-c2j8</em> + cities <em>ju3w-4gxp</em> (county probation, all 58 counties summed); SCO Post-Release Community Supervision payments.<br>
+    Adjusted to 2024 dollars using BLS CPI-U fiscal-year averages. SCO PRCS county allocations available FY 2017–18 onward (one-time payments to county probation departments under Prop 57).
+  </p>
+
+  <div class="tooltip" id="tooltip"></div>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+    const margin = { top: 20, right: 178, bottom: 44, left: 68 };
+    const totalWidth = 880;
+    const totalHeight = 460;
+    const width  = totalWidth  - margin.left - margin.right;
+    const height = totalHeight - margin.top  - margin.bottom;
+
+    const svg = d3.select("#chart")
+      .append("svg")
+        .attr("width",  totalWidth)
+        .attr("height", totalHeight)
+        .attr("role", "img")
+        .attr("aria-label",
+          "Stacked area chart of California community corrections funding from FY 2011-12 to 2023-24 in 2024 dollars")
+      .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const tooltip = d3.select("#tooltip");
+
+    // Stack order bottom to top: county probation, state parole, PRCS allocations
+    const stackKeys  = ["probation", "parole", "prcs"];
+    const stackFills = {
+      probation: "#333",
+      parole:    "#888",
+      prcs:      "#cfcfcf",
+    };
+    const stackLabels = {
+      probation: "County probation",
+      parole:    "State parole (CDCR)",
+      prcs:      "SCO PRCS allocations",
+    };
+
+    d3.csv("data/community_corrections_funding.csv").then(raw => {
+      const data = raw.map(d => ({
+        fy: d.fiscal_year,
+        year: +d.fy_end_year,
+        probation: d.county_probation_2024_dollars ? +d.county_probation_2024_dollars : 0,
+        parole:    d.cdcr_parole_2024_dollars      ? +d.cdcr_parole_2024_dollars      : 0,
+        prcs:      d.sco_prcs_allocations_2024_dollars ? +d.sco_prcs_allocations_2024_dollars : 0,
+      }));
+
+      const x = d3.scaleLinear().domain([2012, 2024]).range([0, width]);
+
+      const stacked = d3.stack().keys(stackKeys)(data);
+
+      const yMax = d3.max(stacked, layer => d3.max(layer, d => d[1]));
+
+      const y = d3.scaleLinear()
+        .domain([0, yMax * 1.06])
+        .range([height, 0])
+        .nice();
+
+      svg.append("g")
+        .attr("class", "grid")
+        .call(d3.axisLeft(y).ticks(6).tickSize(-width).tickFormat(""));
+
+      svg.append("g")
+        .attr("class", "axis")
+        .attr("transform", `translate(0,${height})`)
+        .call(d3.axisBottom(x).ticks(13)
+          .tickFormat(d => `'${String(d - 1).slice(2)}–${String(d).slice(2)}`));
+
+      svg.append("g")
+        .attr("class", "axis")
+        .call(d3.axisLeft(y).ticks(6)
+          .tickFormat(d => d === 0 ? "0" : `$${d3.format(".1f")(d / 1e9)}B`));
+
+      svg.append("text")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -(height / 2))
+        .attr("y", -56)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "0.72rem")
+        .attr("fill", "#555")
+        .text("2024 dollars");
+
+      const areaGen = d3.area()
+        .x(d => x(d.data.year))
+        .y0(d => y(d[0]))
+        .y1(d => y(d[1]))
+        .curve(d3.curveMonotoneX);
+
+      stacked.forEach(layer => {
+        svg.append("path")
+          .datum(layer)
+          .attr("fill", stackFills[layer.key])
+          .attr("stroke", "#fff")
+          .attr("stroke-width", 0.5)
+          .attr("d", areaGen);
+      });
+
+      // End labels
+      stacked.forEach(layer => {
+        const last = layer[layer.length - 1];
+        const bandMid = (last[0] + last[1]) / 2;
+        if (last[1] - last[0] < 8e7) return;
+        svg.append("text")
+          .attr("x", x(last.data.year) + 7)
+          .attr("y", y(bandMid))
+          .attr("dominant-baseline", "middle")
+          .attr("font-size", "0.72rem")
+          .attr("fill", stackFills[layer.key] === "#cfcfcf" ? "#888" : stackFills[layer.key])
+          .text(stackLabels[layer.key]);
+      });
+
+      // Annotation for PRCS allocation start
+      svg.append("line")
+        .attr("x1", x(2018)).attr("x2", x(2018))
+        .attr("y1", 0).attr("y2", height)
+        .attr("stroke", "#bbb")
+        .attr("stroke-width", 1)
+        .attr("stroke-dasharray", "4 3");
+
+      svg.append("text")
+        .attr("class", "annotation")
+        .attr("x", x(2018) + 5)
+        .attr("y", 12)
+        .text("PRCS allocations");
+      svg.append("text")
+        .attr("class", "annotation")
+        .attr("x", x(2018) + 5)
+        .attr("y", 24)
+        .text("from FY 2017–18");
+
+      // Hover
+      const bisect = d3.bisector(d => d.year).center;
+      const fmt = v => v ? `$${d3.format(",.0f")(v / 1e6)}M` : "—";
+
+      svg.append("rect")
+        .attr("width", width).attr("height", height)
+        .attr("fill", "none").attr("pointer-events", "all")
+        .on("mousemove", function(event) {
+          const [mx] = d3.pointer(event);
+          const year = Math.round(x.invert(mx));
+          const i = bisect(data, year);
+          const d = data[i];
+          if (!d) return;
+          const total = d.probation + d.parole + d.prcs;
+          let html = `<strong>FY ${d.fy}</strong>`;
+          html += `<br>County probation: ${fmt(d.probation)}`;
+          html += `<br>State parole: ${fmt(d.parole)}`;
+          html += `<br>PRCS allocations: ${fmt(d.prcs)}`;
+          html += `<br><strong>Total: ${fmt(total)}</strong>`;
+          tooltip
+            .style("opacity", 1)
+            .style("left", (event.clientX + 14) + "px")
+            .style("top",  (event.clientY - 36) + "px")
+            .html(html);
+        })
+        .on("mouseleave", () => tooltip.style("opacity", 0));
+    });
+  </script>
+</body>
+</html>

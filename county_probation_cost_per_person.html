@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>California County Probation Cost per Probationer, 2011–2024 (2024 dollars)</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #fff;
+      color: #1a1a1a;
+      margin: 0;
+      padding: 2.5rem 3rem;
+      max-width: 1040px;
+    }
+
+    h1 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin: 0 0 0.2rem 0;
+      letter-spacing: -0.01em;
+    }
+
+    .subtitle {
+      font-size: 0.82rem;
+      color: #666;
+      margin: 0 0 1.75rem 0;
+    }
+
+    .axis text { font-size: 0.72rem; fill: #555; }
+    .axis .domain { display: none; }
+    .axis line { stroke: #ccc; }
+
+    .grid line { stroke: #ebebeb; }
+    .grid .domain { display: none; }
+
+    .annotation { font-size: 0.68rem; fill: #888; }
+
+    .source-note {
+      font-size: 0.7rem;
+      color: #888;
+      margin-top: 0.6rem;
+      line-height: 1.5;
+    }
+
+    .legend {
+      display: flex;
+      gap: 1.4rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.5rem;
+      font-size: 0.72rem;
+      color: #555;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .legend-swatch {
+      width: 18px;
+      height: 2px;
+      flex-shrink: 0;
+    }
+
+    .tooltip {
+      position: fixed;
+      background: #1a1a1a;
+      color: #fff;
+      padding: 0.45rem 0.65rem;
+      border-radius: 3px;
+      font-size: 0.72rem;
+      line-height: 1.6;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.1s;
+      white-space: nowrap;
+    }
+
+    .county-line { fill: none; stroke: #ccc; stroke-width: 0.8; opacity: 0.55; }
+    .county-line.hover { stroke: #1a1a1a; stroke-width: 1.5; opacity: 1; }
+    .median-line    { fill: none; stroke: #1a1a1a; stroke-width: 2.4; }
+    .highlight-la   { fill: none; stroke: #c0392b; stroke-width: 2; }
+    .highlight-ala  { fill: none; stroke: #2e6da4; stroke-width: 2; }
+    .highlight-sb   { fill: none; stroke: #2e8b57; stroke-width: 2; }
+    .highlight-fres { fill: none; stroke: #b9770e; stroke-width: 2; }
+  </style>
+</head>
+<body>
+
+  <h1>California County Probation Cost per Probationer, 2011–2024</h1>
+  <p class="subtitle">Annual probation expenditures per probationer, 58 counties, 2024 dollars</p>
+  <div id="legend" class="legend"></div>
+  <div id="chart"></div>
+  <p class="source-note">
+    Each thin line is one county. Heavy lines: statewide median, Los Angeles, and Alameda (highlighted as the most-populous counties with notable divergent trajectories). Hover any line to highlight that county.<br>
+    Source: CA State Controller's Office (uctr-c2j8 + ju3w-4gxp) for budget; CA DOJ OpenJustice for population. Data quality note: Yuba's 2016 and 2017 probation population (26, 28) appears to be a coding error in the OpenJustice source — surrounding years are 188 and 538, producing the visible $300k spike.<br>
+    Adjusted to 2024 dollars using BLS CPI-U fiscal-year averages.
+  </p>
+
+  <div class="tooltip" id="tooltip"></div>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+    const margin = { top: 20, right: 130, bottom: 44, left: 78 };
+    const totalWidth = 1000;
+    const totalHeight = 520;
+    const width  = totalWidth  - margin.left - margin.right;
+    const height = totalHeight - margin.top  - margin.bottom;
+
+    const svg = d3.select("#chart")
+      .append("svg")
+        .attr("width",  totalWidth)
+        .attr("height", totalHeight)
+        .attr("role", "img")
+        .attr("aria-label",
+          "Spaghetti line chart of California probation cost per probationer for all 58 counties, 2011 to 2024, in 2024 dollars")
+      .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const tooltip = d3.select("#tooltip");
+
+    d3.csv("data/county_probation_cost_per_person.csv").then(raw => {
+      raw.forEach(d => {
+        d.year = +d.year;
+        d.cost = +d.cost_per_probationer_2024;
+        d.pop  = +d.probation_pop;
+      });
+
+      // Group by county
+      const byCounty = d3.group(raw, d => d.county_name);
+      const counties = Array.from(byCounty.keys()).sort();
+
+      // Statewide median per year
+      const byYear = d3.group(raw, d => d.year);
+      const median = Array.from(byYear, ([year, rows]) => ({
+        year,
+        cost: d3.median(rows, d => d.cost),
+      })).sort((a, b) => a.year - b.year);
+
+      const x = d3.scaleLinear().domain([2011, 2024]).range([0, width]);
+      const yMax = d3.max(raw, d => d.cost) * 1.06;
+      const y = d3.scaleLinear().domain([0, yMax]).range([height, 0]).nice();
+
+      // Grid
+      svg.append("g")
+        .attr("class", "grid")
+        .call(d3.axisLeft(y).ticks(8).tickSize(-width).tickFormat(""));
+
+      svg.append("g")
+        .attr("class", "axis")
+        .attr("transform", `translate(0,${height})`)
+        .call(d3.axisBottom(x).ticks(14).tickFormat(d3.format("d")));
+
+      svg.append("g")
+        .attr("class", "axis")
+        .call(d3.axisLeft(y).ticks(8)
+          .tickFormat(d => d === 0 ? "0" : `$${d3.format(",")(d / 1000)}k`));
+
+      svg.append("text")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -(height / 2))
+        .attr("y", -64)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "0.72rem")
+        .attr("fill", "#555")
+        .text("Cost per probationer (2024 dollars)");
+
+      const lineGen = d3.line()
+        .x(d => x(d.year))
+        .y(d => y(d.cost))
+        .curve(d3.curveMonotoneX);
+
+      const highlighted = new Set(["Los Angeles", "Alameda", "San Bernardino", "Fresno"]);
+
+      // Thin county lines
+      counties.forEach(c => {
+        const rows = byCounty.get(c).slice().sort((a, b) => a.year - b.year);
+        if (highlighted.has(c)) return; // drawn highlighted later
+        svg.append("path")
+          .datum(rows)
+          .attr("class", "county-line")
+          .attr("data-county", c)
+          .attr("d", lineGen)
+          .on("mouseover", function(event, d) {
+            d3.select(this).classed("hover", true);
+          })
+          .on("mousemove", function(event, d) {
+            const [mx, my] = d3.pointer(event, svg.node());
+            const year = Math.round(x.invert(mx));
+            const r = d.find(p => p.year === year) || d[d.length - 1];
+            tooltip
+              .style("opacity", 1)
+              .style("left", (event.clientX + 14) + "px")
+              .style("top",  (event.clientY - 36) + "px")
+              .html(
+                `<strong>${r.county_name}</strong><br>` +
+                `${r.year}: $${d3.format(",")(Math.round(r.cost))}/probationer<br>` +
+                `(pop ${d3.format(",")(r.pop)})`
+              );
+          })
+          .on("mouseleave", function() {
+            d3.select(this).classed("hover", false);
+            tooltip.style("opacity", 0);
+          });
+      });
+
+      const highlights = [
+        { name: "Los Angeles",    cls: "highlight-la",   color: "#c0392b", label: "LA" },
+        { name: "Alameda",        cls: "highlight-ala",  color: "#2e6da4", label: "Alameda" },
+        { name: "San Bernardino", cls: "highlight-sb",   color: "#2e8b57", label: "San Bernardino" },
+        { name: "Fresno",         cls: "highlight-fres", color: "#b9770e", label: "Fresno" },
+      ];
+
+      highlights.forEach(h => {
+        const series = byCounty.get(h.name).slice().sort((a, b) => a.year - b.year);
+        svg.append("path").datum(series).attr("class", h.cls).attr("d", lineGen);
+        const last = series.slice(-1)[0];
+        svg.append("text")
+          .attr("x", x(last.year) + 4)
+          .attr("y", y(last.cost))
+          .attr("dominant-baseline", "middle")
+          .attr("font-size", "0.72rem")
+          .attr("fill", h.color)
+          .text(h.label);
+      });
+
+      // Statewide median
+      svg.append("path").datum(median).attr("class", "median-line").attr("d", lineGen);
+
+      const lastMed = median.slice(-1)[0];
+      svg.append("text")
+        .attr("x", x(lastMed.year) + 4)
+        .attr("y", y(lastMed.cost) + 4)
+        .attr("dominant-baseline", "middle")
+        .attr("font-size", "0.72rem")
+        .attr("font-weight", "600")
+        .attr("fill", "#1a1a1a")
+        .text("median");
+
+      // Build legend
+      const legendEl = d3.select("#legend");
+      const items = [
+        { color: "#1a1a1a", label: "Statewide median", weight: 2.4 },
+        { color: "#c0392b", label: "Los Angeles",    weight: 2 },
+        { color: "#2e6da4", label: "Alameda",        weight: 2 },
+        { color: "#2e8b57", label: "San Bernardino", weight: 2 },
+        { color: "#b9770e", label: "Fresno",         weight: 2 },
+        { color: "#ccc",    label: "Other counties (n=54)", weight: 0.8 },
+      ];
+      items.forEach(it => {
+        const item = legendEl.append("div").attr("class", "legend-item");
+        item.append("svg")
+          .attr("width", 18).attr("height", 4)
+          .append("line")
+            .attr("x1", 0).attr("x2", 18)
+            .attr("y1", 2).attr("y2", 2)
+            .attr("stroke", it.color)
+            .attr("stroke-width", it.weight);
+        item.append("span").text(it.label);
+      });
+    });
+  </script>
+</body>
+</html>
