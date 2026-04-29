@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>California Justice-Involved Population: 5-Year Change, 1980–2024</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #fff;
+      color: #1a1a1a;
+      margin: 0;
+      padding: 2.5rem 3rem;
+      max-width: 1000px;
+    }
+
+    h1 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin: 0 0 0.2rem 0;
+      letter-spacing: -0.01em;
+    }
+
+    .subtitle {
+      font-size: 0.82rem;
+      color: #666;
+      margin: 0 0 1.75rem 0;
+    }
+
+    .axis text { font-size: 0.72rem; fill: #555; }
+    .axis .domain { display: none; }
+    .axis line { stroke: #ccc; }
+
+    .grid line { stroke: #ebebeb; }
+    .grid .domain { display: none; }
+
+    .zero-line { stroke: #888; stroke-width: 1; }
+
+    .annotation { font-size: 0.68rem; fill: #888; }
+
+    .source-note {
+      font-size: 0.7rem;
+      color: #888;
+      margin-top: 0.6rem;
+      line-height: 1.5;
+    }
+
+    .legend {
+      display: flex;
+      gap: 1.4rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.8rem;
+      font-size: 0.72rem;
+      color: #555;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .tooltip {
+      position: fixed;
+      background: #1a1a1a;
+      color: #fff;
+      padding: 0.45rem 0.65rem;
+      border-radius: 3px;
+      font-size: 0.72rem;
+      line-height: 1.6;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.1s;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>California Justice-Involved Population: 5-Year Change, 1980–2024</h1>
+  <p class="subtitle">Percent change in population over each 5-year period for state prison, county jail, state parole, county probation, PRCS, and mandatory supervision</p>
+  <div id="legend" class="legend"></div>
+  <div id="chart"></div>
+  <p class="source-note">
+    Sources: CDCR historical records (Zimring &amp; Hawkins compilation); CDCR Monthly Report of Population &amp; Data Points; BJS Annual Parole Survey; CA DOJ OpenJustice; BSCC Jail Profile Survey; LAO; CPOC.<br>
+    Each point represents the percent change in December population from 5 years prior. Sample years: 1985, 1990, 1995, 2000, 2005, 2010, 2015, 2020, 2024 (the 2024 point uses a 4-year window since 2020 is the most recent prior anchor). Series begin in the first 5-year window with valid data: jail and parole start at 2005 (vs 2000); probation at 2010 (vs 2005).<br>
+    PRCS and Mandatory Supervision are shown as open dots (no connecting line) at 2018 and 2023, using two within-source windows: 2013→2018 (5-year, all CPOC published reports) and 2019→2023 (4-year, all LAO visualizations). Standard 5-year anchors (2015→2020 and 2020→2024) are not shown for these programs because they would span a methodology change in the underlying data source — comparing values across CPOC, LAO, and Gemini-estimate boundaries surfaces measurement artifacts rather than real population changes.<br>
+    The 1980s prison surge reflects determinate sentencing reforms and the "tough on crime" era. AB 109 Public Safety Realignment (October 2011) drives the 2010–2015 parole and probation contractions; Prop 47 (November 2014) reclassified certain felonies as misdemeanors.
+  </p>
+
+  <div class="tooltip" id="tooltip"></div>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+    const margin = { top: 20, right: 140, bottom: 44, left: 64 };
+    const totalWidth = 960;
+    const totalHeight = 480;
+    const width  = totalWidth  - margin.left - margin.right;
+    const height = totalHeight - margin.top  - margin.bottom;
+
+    const svg = d3.select("#chart")
+      .append("svg")
+        .attr("width",  totalWidth)
+        .attr("height", totalHeight)
+        .attr("role", "img")
+        .attr("aria-label",
+          "Line chart of 5-year percent change in California prison, jail, parole, probation, PRCS, and mandatory supervision populations from 1985 to 2024")
+      .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const tooltip = d3.select("#tooltip");
+
+    const series = [
+      { key: "prison",    col: "prison_population",    label: "Prison",     color: "#1a1a1a" },
+      { key: "jail",      col: "jail_population",      label: "Jail",       color: "#555"    },
+      { key: "parole",    col: "parole_population",    label: "Parole",     color: "#c0392b" },
+      { key: "probation", col: "total_probation",      label: "Probation",  color: "#2e6da4" },
+      { key: "prcs",      col: "prcs_population",      label: "PRCS",       color: "#2e8b57" },
+      { key: "ms",        col: "mandatory_supervision",label: "Mandatory supv.", color: "#b9770e" },
+    ];
+
+    const anchors = [1980, 1985, 1990, 1995, 2000, 2005, 2010, 2015, 2020, 2024];
+
+    // For PRCS and MS, drop pre-2013 (estimate years) — minimum baseline must be 2013
+    const minBaseline = { prcs: 2013, ms: 2013 };
+
+    d3.csv("data/ca_statewide_prison_population.csv").then(raw => {
+      const byYear = new Map();
+      raw.forEach(d => {
+        const y = +d.year;
+        const obj = { year: y };
+        series.forEach(s => {
+          const v = d[s.col] && +d[s.col] > 0 ? +d[s.col] : null;
+          obj[s.key] = v;
+        });
+        byYear.set(y, obj);
+      });
+
+      // For PRCS/MS, the source of underlying values changes at 2018/2019 and 2023/2024,
+      // so a 5-year window spanning those boundaries would surface a measurement artifact
+      // rather than a real change. Use within-source windows instead, plotted as dots only
+      // (no connecting line, since the windows aren't sequential 5-year increments).
+      const prcsMsWindows = [
+        { baseYear: 2013, endYear: 2018, source: "CPOC" },     // 5-year, fully CPOC
+        { baseYear: 2019, endYear: 2023, source: "LAO" },      // 4-year, fully LAO
+      ];
+
+      const seriesData = series.map(s => {
+        const points = [];
+
+        if (s.key === "prcs" || s.key === "ms") {
+          prcsMsWindows.forEach(w => {
+            const base = byYear.get(w.baseYear)?.[s.key];
+            const end  = byYear.get(w.endYear)?.[s.key];
+            if (!base || !end) return;
+            points.push({
+              baseYear: w.baseYear,
+              endYear: w.endYear,
+              span: w.endYear - w.baseYear,
+              pct: (end / base - 1) * 100,
+              base, end,
+              source: w.source,
+            });
+          });
+          return { ...s, points, dotsOnly: true };
+        }
+
+        for (let i = 1; i < anchors.length; i++) {
+          const baseYear = anchors[i - 1];
+          const endYear  = anchors[i];
+          const span = endYear - baseYear;
+          if (minBaseline[s.key] && baseYear < minBaseline[s.key]) continue;
+          const base = byYear.get(baseYear)?.[s.key];
+          const end  = byYear.get(endYear)?.[s.key];
+          if (!base || !end) continue;
+          const pct = (end / base - 1) * 100;
+          points.push({ baseYear, endYear, span, pct, base, end });
+        }
+        return { ...s, points };
+      });
+
+      const x = d3.scaleLinear().domain([1985, 2024]).range([0, width]);
+
+      const allPts = seriesData.flatMap(s => s.points.map(p => p.pct));
+      const yMin = Math.min(-65, d3.min(allPts) * 1.05);
+      const yMax = Math.max(110, d3.max(allPts) * 1.05);
+      const y = d3.scaleLinear().domain([yMin, yMax]).range([height, 0]).nice();
+
+      svg.append("g")
+        .attr("class", "grid")
+        .call(d3.axisLeft(y).ticks(8).tickSize(-width).tickFormat(""));
+
+      svg.append("line")
+        .attr("class", "zero-line")
+        .attr("x1", 0).attr("x2", width)
+        .attr("y1", y(0)).attr("y2", y(0));
+
+      svg.append("g")
+        .attr("class", "axis")
+        .attr("transform", `translate(0,${height})`)
+        .call(d3.axisBottom(x).tickValues(anchors.slice(1)).tickFormat(d3.format("d")));
+
+      svg.append("g")
+        .attr("class", "axis")
+        .call(d3.axisLeft(y).ticks(8)
+          .tickFormat(d => d === 0 ? "0" : `${d > 0 ? "+" : ""}${d}%`));
+
+      svg.append("text")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -(height / 2))
+        .attr("y", -50)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "0.72rem")
+        .attr("fill", "#555")
+        .text("5-year change in population");
+
+      const lineGen = d3.line()
+        .x(d => x(d.endYear))
+        .y(d => y(d.pct))
+        .curve(d3.curveMonotoneX);
+
+      seriesData.forEach(s => {
+        if (s.points.length === 0) return;
+
+        if (!s.dotsOnly) {
+          svg.append("path")
+            .datum(s.points)
+            .attr("fill", "none")
+            .attr("stroke", s.color)
+            .attr("stroke-width", 2)
+            .attr("d", lineGen);
+        }
+
+        svg.selectAll(`.dot-${s.key}`)
+          .data(s.points)
+          .join("circle")
+            .attr("cx", d => x(d.endYear))
+            .attr("cy", d => y(d.pct))
+            .attr("r", s.dotsOnly ? 4 : 3)
+            .attr("fill", s.dotsOnly ? "#fff" : s.color)
+            .attr("stroke", s.color)
+            .attr("stroke-width", s.dotsOnly ? 1.6 : 0);
+
+        const last = s.points[s.points.length - 1];
+        svg.append("text")
+          .attr("x", x(last.endYear) + 6)
+          .attr("y", y(last.pct))
+          .attr("dominant-baseline", "middle")
+          .attr("font-size", "0.72rem")
+          .attr("fill", s.color)
+          .text(s.label);
+      });
+
+      const legendEl = d3.select("#legend");
+      series.forEach(s => {
+        const item = legendEl.append("div").attr("class", "legend-item");
+        item.append("svg")
+          .attr("width", 18).attr("height", 4)
+          .append("line")
+            .attr("x1", 0).attr("x2", 18)
+            .attr("y1", 2).attr("y2", 2)
+            .attr("stroke", s.color)
+            .attr("stroke-width", 2);
+        item.append("span").text(s.label);
+      });
+
+      // Hover overlay
+      const fmt = pct => `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`;
+      const fmtNum = v => d3.format(",")(Math.round(v));
+
+      svg.append("rect")
+        .attr("width", width).attr("height", height)
+        .attr("fill", "none").attr("pointer-events", "all")
+        .on("mousemove", function(event) {
+          const [mx] = d3.pointer(event);
+          const xYear = x.invert(mx);
+          // Snap to nearest anchor (excluding 1980 since no point there)
+          const snapAnchors = anchors.slice(1);
+          const snapped = snapAnchors.reduce((a, b) => Math.abs(b - xYear) < Math.abs(a - xYear) ? b : a);
+          let html = "";
+          let header = "";
+          let any = false;
+          seriesData.forEach(s => {
+            const p = s.points.find(pt => pt.endYear === snapped);
+            if (p) {
+              if (!any) header = `<strong>${p.baseYear} → ${p.endYear}</strong>${p.span !== 5 ? ` <span style="color:#aaa">(${p.span}-yr)</span>` : ""}`;
+              html += `<br><span style="color:${s.color}">●</span> ${s.label}: ${fmt(p.pct)} <span style="color:#aaa">(${fmtNum(p.base)} → ${fmtNum(p.end)})</span>`;
+              any = true;
+            }
+          });
+          if (!any) { tooltip.style("opacity", 0); return; }
+          tooltip
+            .style("opacity", 1)
+            .style("left", (event.clientX + 14) + "px")
+            .style("top",  (event.clientY - 36) + "px")
+            .html(header + html);
+        })
+        .on("mouseleave", () => tooltip.style("opacity", 0));
+    });
+  </script>
+</body>
+</html>

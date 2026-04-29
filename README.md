@@ -15,6 +15,9 @@ Charts exploring the data in [ca_incarceration_stats](https://github.com/mbecica
 | `population_rate_narrow.html` | Same as above, narrower aspect ratio |
 | `community_corrections_population.html` | Stacked area of community corrections (parole, probation, PRCS, MS, CRPP), 2011–2024 |
 | `community_corrections_population_rate.html` | Same as above but per 100k California residents |
+| `yoy_change.html` | Year-over-year percent change for prison, jail, parole, probation, PRCS, and mandatory supervision, 2011–2024 |
+| `five_year_change.html` | 5-year percent change in population for the same six programs, 1985–2024 (data starts where each program's data begins) |
+| `five_year_change_small_multiples.html` | Same data as `five_year_change.html` but rendered as six area-filled small-multiples panels (positive growth shaded green, contraction red) for clearer per-program trends |
 
 ### Budget
 

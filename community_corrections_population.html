@@ -191,25 +191,6 @@
           .text(stackLabels[layer.key]);
       });
 
-      // Annotation for AB 109 / 2013 PRCS-MS start
-      svg.append("line")
-        .attr("x1", x(2013)).attr("x2", x(2013))
-        .attr("y1", 0).attr("y2", height)
-        .attr("stroke", "#bbb")
-        .attr("stroke-width", 1)
-        .attr("stroke-dasharray", "4 3");
-
-      svg.append("text")
-        .attr("class", "annotation")
-        .attr("x", x(2013) + 5)
-        .attr("y", 12)
-        .text("PRCS &amp; MS");
-      svg.append("text")
-        .attr("class", "annotation")
-        .attr("x", x(2013) + 5)
-        .attr("y", 24)
-        .text("from 2013");
-
       // Hover
       const bisect = d3.bisector(d => d.year).center;
       const fmt = v => v ? d3.format(",")(Math.round(v)) : "—";
